@@ -249,6 +249,7 @@ class Adaptive_GUI(QWidget):
         
         if ok:
             tmp: np.array = tif.imread(waveform_name)
+            self.threads = (tmp.shape[-1])
             if len(tmp.shape) == 3:
                 t = time()
                 tmp = tmp[self.start_sample:,:,:]
@@ -286,6 +287,7 @@ class Adaptive_GUI(QWidget):
         print(f"Checkboxes set: {(show_tau, show_TimeStack)}")
         self.viewer.layers.clear()
         pos_taus_gpu = cuda.to_device(np.linspace(self.tau_range[0], self.tau_range[1], 1000, dtype=np.float32))
+
         if self.stack_cpu.shape[0] > 1:
             image_per_calculation = self.time_bin
             s = [image_per_calculation, self.stack_cpu.shape[1], self.stack_cpu.shape[2], self.stack_cpu.shape[3]]

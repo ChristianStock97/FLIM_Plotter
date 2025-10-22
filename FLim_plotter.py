@@ -1,10 +1,12 @@
-from qtpy.QtWidgets import QLabel, QPushButton, QWidget, QGridLayout, QFileDialog, QSlider, QCheckBox
+from qtpy.QtWidgets import QLabel, QPushButton, QWidget, QGridLayout, QFileDialog, QSlider, QCheckBox, QMessageBox
 from qtpy.QtCore import Qt
 from time import sleep, time
 import napari
 import tiffile as tif
 import numpy as np
 from numba import cuda
+import traceback
+import logging
 import gc
 from global_fit import flim_fit_2D, mean_cuda_2D, dilate_cuda_2D, dilation_cuda_3D, mean_cuda_3D
 from TO_HSV import flim_to_rgb
@@ -49,7 +51,23 @@ class Adaptive_GUI(QWidget):
         self.stack_gpu = None
         self.diluted_image_gpu = None
         self.tau_gpu = None
-        self.pos_taus_gpu = cuda.to_device(np.linspace(0.5, 2.5, 1000, dtype=np.float32))
+        # try to allocate common GPU buffers if CUDA is available
+        try:
+            self.cuda_available = cuda.is_available()
+        except Exception:
+            self.cuda_available = False
+
+        self.pos_taus_gpu = None
+        if self.cuda_available:
+            try:
+                self.pos_taus_gpu = cuda.to_device(np.linspace(0.5, 2.5, 1000, dtype=np.float32))
+            except Exception:
+                logging.exception("Failed to allocate pos_taus_gpu on device")
+                self.pos_taus_gpu = None
+                self.cuda_available = False
+        else:
+            # clear any device usage
+            self.pos_taus_gpu = None
         self.x_data_gpu = None
         self.res_image_gpu = None
 
@@ -68,6 +86,13 @@ class Adaptive_GUI(QWidget):
         self.Run_button = QPushButton("Run Fit")
         self.Run_button.setFixedSize(200, 30)
         self.Run_button.clicked.connect(self.run_Fit)
+        if not getattr(self, 'cuda_available', False):
+            # disable run button when CUDA not available and inform the user
+            self.Run_button.setEnabled(False)
+            self.cuda_label = QLabel("CUDA not available — GPU kernels disabled", self)
+            self.cuda_label.setStyleSheet('color: red')
+        else:
+            self.cuda_label = QLabel("CUDA available", self)
 
         self.kernel_arv = QLabel(f"Kernel [{self.kernel}]", self)
         self.kernel_sl = QSlider()
@@ -157,6 +182,7 @@ class Adaptive_GUI(QWidget):
         layout.addWidget(self.start_pos__sl, 8, 1)
         layout.addWidget(self.stop_pos_label, 9, 0)
         layout.addWidget(self.stop_pos__sl, 9, 1)
+        layout.addWidget(self.cuda_label, 10, 0, 1, 2)
 
         mda_tab = QWidget()
         mda_tab.setLayout(layout)
@@ -207,10 +233,21 @@ class Adaptive_GUI(QWidget):
             if len(self.stack_cpu.shape) == 4:
                 stop = 0.31 * (self.stack_cpu.shape[1]-1)
                 steps = self.stack_cpu.shape[1]
-
-            del self.x_data_gpu
-            gc.collect()
-            self.x_data_gpu = cuda.to_device(np.linspace(start, stop, steps, dtype=np.float32))
+            # safely re-create the x_data_gpu device array
+            try:
+                if hasattr(self, 'x_data_gpu') and self.x_data_gpu is not None:
+                    try:
+                        del self.x_data_gpu
+                    except Exception:
+                        pass
+                gc.collect()
+                if getattr(self, 'cuda_available', False):
+                    self.x_data_gpu = cuda.to_device(np.linspace(start, stop, steps, dtype=np.float32))
+                else:
+                    self.x_data_gpu = None
+            except Exception:
+                logging.exception("Failed to create x_data_gpu")
+                self.x_data_gpu = None
 
     def set_max_tau(self):
         self.tau_range[1] = round(float(self.maxTau_sl.value()) / 10, 1)
@@ -248,33 +285,74 @@ class Adaptive_GUI(QWidget):
             "Flim Stack (*.tif)")
         
         if ok:
-            tmp: np.array = tif.imread(waveform_name)
-            self.threads = (tmp.shape[-1])
-            if len(tmp.shape) == 3:
-                t = time()
-                tmp = tmp[self.start_sample:,:,:]
-                tmp =  (256 * tmp / tmp.max()).astype(np.uint8)
-                self.stack_cpu = np.reshape(tmp, (1,tmp.shape[0], tmp.shape[1], tmp.shape[2]))
-                dt = time()
-                print(f"Neede {dt-t} Seconds for Data read")
-                self.stop_pos__sl.setRange(1,self.stack_cpu.shape[0])
-                self.stop_pos__sl.setValue(self.stack_cpu.shape[0])
-                self.start_pos__sl.setRange(0,self.stack_cpu.shape[0]-1)
-                self.start_pos__sl.setValue(0)
-        
-            elif len(tmp.shape) == 4:
-                t = time()
-                self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
-                dt = time()
-                print(f"Neede {dt-t} Seconds for Data read")
-                self.stop_pos__sl.setRange(1,self.stack_cpu.shape[0])
-                self.stop_pos__sl.setValue(self.stack_cpu.shape[0])
-                self.start_pos__sl.setRange(0,self.stack_cpu.shape[0]-1)
-                self.start_pos__sl.setValue(0)
-
-            else:
+            # read file with error handling
+            try:
+                tmp: np.array = tif.imread(waveform_name)
+            except Exception as e:
+                tb = traceback.format_exc()
+                QMessageBox.critical(self, "File Read Error", f"Unable to read TIFF file:\n{e}\n\nSee console for details.")
+                logging.error(tb)
                 self.stack_cpu = None
                 return
+
+            if not isinstance(tmp, np.ndarray):
+                QMessageBox.warning(self, "Invalid Data", "Loaded file does not contain a numeric array.")
+                self.stack_cpu = None
+                return
+
+            if tmp.size == 0:
+                QMessageBox.warning(self, "Empty File", "Selected TIFF contains no data.")
+                self.stack_cpu = None
+                return
+
+            # update threads based on image width if available
+            try:
+                self.threads = (tmp.shape[-1])
+            except Exception:
+                self.threads = (512)
+
+            if len(tmp.shape) == 3:
+                try:
+                    t = time()
+                    tmp = tmp[self.start_sample:,:,:]
+                    # normalize safely
+                    maxv = tmp.max() if tmp.size and np.isfinite(tmp.max()) else 1
+                    tmp =  (256 * tmp / maxv).astype(np.uint8)
+                    self.stack_cpu = np.reshape(tmp, (1,tmp.shape[0], tmp.shape[1], tmp.shape[2]))
+                    dt = time()
+                    print(f"Neede {dt-t} Seconds for Data read")
+                    self.stop_pos__sl.setRange(1,self.stack_cpu.shape[0])
+                    self.stop_pos__sl.setValue(self.stack_cpu.shape[0])
+                    self.start_pos__sl.setRange(0,self.stack_cpu.shape[0]-1)
+                    self.start_pos__sl.setValue(0)
+                except Exception as e:
+                    QMessageBox.critical(self, "Data Error", f"Failed to prepare 3D stack:\n{e}")
+                    logging.exception("Failed to prepare 3D stack")
+                    self.stack_cpu = None
+                    return
+
+            elif len(tmp.shape) == 4:
+                try:
+                    t = time()
+                    # assume (Frames, Samples, H, W)
+                    self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
+                    dt = time()
+                    print(f"Neede {dt-t} Seconds for Data read")
+                    self.stop_pos__sl.setRange(1,self.stack_cpu.shape[0])
+                    self.stop_pos__sl.setValue(self.stack_cpu.shape[0])
+                    self.start_pos__sl.setRange(0,self.stack_cpu.shape[0]-1)
+                    self.start_pos__sl.setValue(0)
+                except Exception as e:
+                    QMessageBox.critical(self, "Data Error", f"Failed to prepare 4D stack:\n{e}")
+                    logging.exception("Failed to prepare 4D stack")
+                    self.stack_cpu = None
+                    return
+
+            else:
+                QMessageBox.warning(self, "Unsupported Shape", f"Unsupported TIFF shape: {tmp.shape}")
+                self.stack_cpu = None
+                return
+
             self.set_startSample()
         
         else:
@@ -286,7 +364,21 @@ class Adaptive_GUI(QWidget):
         show_TimeStack = self.show_TimeStack_check.isChecked()
         print(f"Checkboxes set: {(show_tau, show_TimeStack)}")
         self.viewer.layers.clear()
-        pos_taus_gpu = cuda.to_device(np.linspace(self.tau_range[0], self.tau_range[1], 1000, dtype=np.float32))
+
+        if self.stack_cpu is None:
+            QMessageBox.warning(self, "No data", "No stack loaded. Please load a TIFF stack first.")
+            return
+
+        if not getattr(self, 'cuda_available', False):
+            QMessageBox.critical(self, "CUDA required", "CUDA is required to run the GPU kernels. Aborting.")
+            return
+
+        try:
+            pos_taus_gpu = cuda.to_device(np.linspace(self.tau_range[0], self.tau_range[1], 1000, dtype=np.float32))
+        except Exception as e:
+            logging.exception("Failed to allocate pos_taus_gpu in calculate_flim")
+            QMessageBox.critical(self, "CUDA error", f"Unable to allocate device memory:\n{e}")
+            return
 
         if self.stack_cpu.shape[0] > 1:
             image_per_calculation = self.time_bin

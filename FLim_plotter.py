@@ -238,7 +238,7 @@ class Adaptive_GUI(QWidget):
 
     def change_timebin_Value(self):
         self.time_bin = int(self.timebin_sl.value())
-        self.timebin_arv.setText(f"Kernel [{self.time_bin}]")
+        self.timebin_arv.setText(f"Time_Bin [{self.time_bin}]")
 
     def browse_timestack(self):
         waveform_name, ok = QFileDialog.getOpenFileName(

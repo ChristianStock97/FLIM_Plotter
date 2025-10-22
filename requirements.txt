@@ -1,0 +1,9 @@
+# Viewer
+napari[all]
+
+# Arrays & performance
+numpy>=1.23,<2.1
+numba[cuda]>=0.60
+
+# Image I/O (you import as "tiffile as tif")
+tiffile

@@ -38,6 +38,7 @@ class Adaptive_GUI(QWidget):
         self.tau_range = [0.0, 3.0]
         self.threshold = 0.0
         self.kernel = 0
+        self.time_bin = 1
         self.start_sample = 0
         self.stack_cpu = None
         self.ret_image_cpu = None
@@ -75,6 +76,15 @@ class Adaptive_GUI(QWidget):
         self.kernel_sl.setRange(0,10)
         self.kernel_sl.valueChanged.connect(self.change_kernel_Value)
         self.kernel_sl.setValue(int(self.config['Starting Parameters']['Kernel']))
+
+        self.timebin_arv = QLabel(f"Time_Bin [{self.time_bin}]", self)
+        self.timebin_sl = QSlider()
+        self.timebin_sl.setOrientation(Qt.Horizontal)
+        self.timebin_sl.setTickInterval(1)
+        self.timebin_sl.setRange(1,200)
+        self.timebin_sl.valueChanged.connect(self.change_timebin_Value)
+        self.timebin_sl.setValue(int(self.config['Starting Parameters']['Time_Bin']))
+
 
         self.threshold_arv = QLabel(f"Threshold [{self.threshold}]", self)
         self.thrshold_sl = QSlider()
@@ -131,18 +141,22 @@ class Adaptive_GUI(QWidget):
         layout.addWidget(self.Run_button, 1, 1)
         layout.addWidget(self.kernel_arv, 2, 0)
         layout.addWidget(self.kernel_sl, 2, 1)
-        layout.addWidget(self.threshold_arv, 3, 0)
-        layout.addWidget(self.thrshold_sl, 3, 1)
-        layout.addWidget(self.minTau_label, 4, 0)
-        layout.addWidget(self.minTau_sl, 4, 1)
-        layout.addWidget(self.maxTau_label, 5, 0)
-        layout.addWidget(self.maxTau_sl, 5, 1)
-        layout.addWidget(self.startSample_label, 6, 0)
-        layout.addWidget(self.startSample_sl, 6, 1)
-        layout.addWidget(self.start_pos_label, 7, 0)
-        layout.addWidget(self.start_pos__sl, 7, 1)
-        layout.addWidget(self.stop_pos_label, 8, 0)
-        layout.addWidget(self.stop_pos__sl, 8, 1)
+        layout.addWidget(self.timebin_arv, 3, 0)
+        layout.addWidget(self.timebin_sl, 3, 1)
+
+
+        layout.addWidget(self.threshold_arv, 4, 0)
+        layout.addWidget(self.thrshold_sl, 4, 1)
+        layout.addWidget(self.minTau_label, 5, 0)
+        layout.addWidget(self.minTau_sl, 5, 1)
+        layout.addWidget(self.maxTau_label, 6, 0)
+        layout.addWidget(self.maxTau_sl, 6, 1)
+        layout.addWidget(self.startSample_label, 7, 0)
+        layout.addWidget(self.startSample_sl, 7, 1)
+        layout.addWidget(self.start_pos_label, 8, 0)
+        layout.addWidget(self.start_pos__sl, 8, 1)
+        layout.addWidget(self.stop_pos_label, 9, 0)
+        layout.addWidget(self.stop_pos__sl, 9, 1)
 
         mda_tab = QWidget()
         mda_tab.setLayout(layout)
@@ -222,6 +236,10 @@ class Adaptive_GUI(QWidget):
         self.kernel = int(self.kernel_sl.value())
         self.kernel_arv.setText(f"Kernel [{self.kernel}]")
 
+    def change_timebin_Value(self):
+        self.time_bin = int(self.timebin_sl.value())
+        self.timebin_arv.setText(f"Kernel [{self.time_bin}]")
+
     def browse_timestack(self):
         waveform_name, ok = QFileDialog.getOpenFileName(
             self,
@@ -269,7 +287,7 @@ class Adaptive_GUI(QWidget):
         self.viewer.layers.clear()
         pos_taus_gpu = cuda.to_device(np.linspace(self.tau_range[0], self.tau_range[1], 1000, dtype=np.float32))
         if self.stack_cpu.shape[0] > 1:
-            image_per_calculation = 10
+            image_per_calculation = self.time_bin
             s = [image_per_calculation, self.stack_cpu.shape[1], self.stack_cpu.shape[2], self.stack_cpu.shape[3]]
             stack_gpu = cuda.to_device(np.zeros(s, np.float32))
             n_images = (self.video_range[1]- self.video_range[0]) // image_per_calculation + 1

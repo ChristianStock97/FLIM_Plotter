@@ -145,17 +145,3 @@ def new():
     viewer = napari.Viewer()
     viewer.add_image(RGB_cpu)
     napari.run()
-
-if __name__ == "__main__":
-    path = "E:\Interleaved FLIM\Polle_x4/"
-    flim_path = path +  "tau_1.tif"
-    flim = iio.imread(flim_path).astype(np.float32)
-    flim[flim < 0] = 0
-    flim[flim>100] = 0
-    flim = 65535 * (flim - flim.min()) / (flim.max() - flim.min()).astype(np.uint16)
-
-    tif.imwrite(path + "flim_16bit_1.tif", flim.astype(np.uint16))
-
-    v = napari.Viewer()
-    v.add_image(flim, name="FLIM")
-    napari.run()    

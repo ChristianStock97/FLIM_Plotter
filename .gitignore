@@ -1,0 +1,77 @@
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# --- Package/build artifacts ---
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+wheels/
+
+# --- Test / coverage reports ---
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+htmlcov/
+
+# --- Type checker / linters ---
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+.pylint.d/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Framework bits (uncomment as needed) ---
+# Django:
+# *.log
+# *.pot
+# *.py,cover
+# db.sqlite3
+# media/
+# staticfiles/
+
+# Flask / instance config:
+# instance/
+# .webassets-cache
+
+# --- Environment & secrets (keep sensitive stuff out of git) ---
+.env
+.env.*
+*.env
+*.secret
+*.pem
+*.key
+
+# --- IDE / editor junk ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*.code-workspace
+.ropeproject/
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Misc (uncomment if you generate these) ---
+# logs/
+# tmp/
+# .pytest-warnings

@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QLabel, QPushButton, QWidget, QGridLayout, QFileDialog, QSlider, QCheckBox, QMessageBox
+from qtpy.QtWidgets import QLabel, QPushButton, QWidget, QGridLayout, QFileDialog, QSlider, QCheckBox, QMessageBox, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox
 from qtpy.QtCore import Qt
 from time import sleep, time
 import napari
@@ -12,6 +12,58 @@ from global_fit import flim_fit_2D, mean_cuda_2D, dilate_cuda_2D, dilation_cuda_
 from TO_HSV import flim_to_rgb
 import configparser
 import os
+from pathlib import Path
+
+class ParametersDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Acquisition Parameters")
+
+        layout = QFormLayout(self)
+
+        # Interleaving (only 4, 8, 16)
+        self.interleaving_combo = QComboBox(self)
+        for val in (4, 8, 16):
+            self.interleaving_combo.addItem(str(val), val)
+        layout.addRow("Interleaving:", self.interleaving_combo)
+
+        # num_frames (>= 1)
+        self.num_frames_spin = QSpinBox(self)
+        self.num_frames_spin.setMinimum(1)
+        self.num_frames_spin.setMaximum(1_000_000)
+        self.num_frames_spin.setValue(1)
+        layout.addRow("Number of frames:", self.num_frames_spin)
+
+        # sample_offset (>= 0)
+        self.sample_offset_spin = QSpinBox(self)
+        self.sample_offset_spin.setMinimum(0)
+        self.sample_offset_spin.setMaximum(1_000_000)
+        self.sample_offset_spin.setValue(0)
+        layout.addRow("Sample offset:", self.sample_offset_spin)
+
+        # OK / Cancel
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            self
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addRow(self.button_box)
+
+    def get_values(self):
+        """Return values as a dict."""
+        return {
+            "Interleaving": self.interleaving_combo.currentData(),
+            "num_frames": self.num_frames_spin.value(),
+            "sample_offset": self.sample_offset_spin.value(),
+        }
+
+
+def ask_parameters(parent=None):
+    dlg = ParametersDialog(parent)
+    if dlg.exec_() == QDialog.Accepted:
+        return dlg.get_values()
+    return None
 
 class Adaptive_GUI(QWidget):
     def __init__(self, viewer = None, parent=None):
@@ -282,35 +334,56 @@ class Adaptive_GUI(QWidget):
             self,
             "Select a File",
             "E:",
-            "Flim Stack (*.tif)")
+            "Flim Stack (*.tif *.atb);;All Files (*)")
         
         if ok:
-            # read file with error handling
-            try:
-                tmp: np.array = tif.imread(waveform_name)
-            except Exception as e:
-                tb = traceback.format_exc()
-                QMessageBox.critical(self, "File Read Error", f"Unable to read TIFF file:\n{e}\n\nSee console for details.")
-                logging.error(tb)
-                self.stack_cpu = None
+            suffix = Path(waveform_name).suffix.lower()
+
+            if suffix == ".tif":
+                # read file with error handling
+                try:
+                    tmp: np.array = tif.imread(waveform_name)
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    QMessageBox.critical(self, "File Read Error", f"Unable to read TIFF file:\n{e}\n\nSee console for details.")
+                    logging.error(tb)
+                    self.stack_cpu = None
+                    return
+
+                if not isinstance(tmp, np.ndarray):
+                    QMessageBox.warning(self, "Invalid Data", "Loaded file does not contain a numeric array.")
+                    self.stack_cpu = None
+                    return
+
+                if tmp.size == 0:
+                    QMessageBox.warning(self, "Empty File", "Selected TIFF contains no data.")
+                    self.stack_cpu = None
+                    return
+
+                # update threads based on image width if available
+                try:
+                    self.threads = (tmp.shape[-1])
+                except Exception:
+                    self.threads = (512)
+
+                
+            elif suffix == ".atb":
+                from reconsturction import convert_to_image_cuda
+                try:
+                    params = ask_parameters(self)
+                    if params:
+                        print(params)
+                    tmp: np.array = convert_to_image_cuda(waveform_name, params["Interleaving"], params["num_frames"], params["sample_offset"], 0)
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    QMessageBox.critical(self, "File Read Error", f"Unable to read TIFF file:\n{e}\n\nSee console for details.")
+                    logging.error(tb)
+                    self.stack_cpu = None
+                    return
+            else:
+                print("Unknown file type")
                 return
-
-            if not isinstance(tmp, np.ndarray):
-                QMessageBox.warning(self, "Invalid Data", "Loaded file does not contain a numeric array.")
-                self.stack_cpu = None
-                return
-
-            if tmp.size == 0:
-                QMessageBox.warning(self, "Empty File", "Selected TIFF contains no data.")
-                self.stack_cpu = None
-                return
-
-            # update threads based on image width if available
-            try:
-                self.threads = (tmp.shape[-1])
-            except Exception:
-                self.threads = (512)
-
+            
             if len(tmp.shape) == 3:
                 try:
                     t = time()

@@ -37,7 +37,7 @@ class Adaptive_GUI(QWidget):
                 self.config.write(f)
 
         self.video_range = [0, 0]
-        self.tau_range = [0.0, 3.0]
+        self.tau_range = [0.0, 8.0]
         self.threshold = 0.0
         self.kernel = 0
         self.time_bin = 1
@@ -123,15 +123,15 @@ class Adaptive_GUI(QWidget):
         self.minTau_sl = QSlider()
         self.minTau_sl.setOrientation(Qt.Horizontal)
         self.minTau_sl.setTickInterval(1)
-        self.minTau_sl.setRange(0,30)
+        self.minTau_sl.setRange(0,80)
         self.minTau_sl.valueChanged.connect(self.set_min_tau)
         self.minTau_sl.setValue(int(self.config['Starting Parameters']['MinTau']))
 
-        self.maxTau_label = QLabel("max Tau [3.0]", self)
+        self.maxTau_label = QLabel("max Tau [8.0]", self)
         self.maxTau_sl = QSlider()
         self.maxTau_sl.setOrientation(Qt.Horizontal)
         self.maxTau_sl.setTickInterval(1)
-        self.maxTau_sl.setRange(0,30)
+        self.maxTau_sl.setRange(0,80)
         self.maxTau_sl.valueChanged.connect(self.set_max_tau)
         self.maxTau_sl.setValue(int(self.config['Starting Parameters']['MaxTau']))
 
@@ -260,7 +260,7 @@ class Adaptive_GUI(QWidget):
     def set_min_tau(self):
         self.tau_range[0] = round(float(self.minTau_sl.value()) / 10, 1)
         self.minTau_label.setText(f"min Tau [{self.tau_range[0]}]")
-        if self.tau_range[0] >= self.tau_range[1] and self.tau_range[0] < 3.0:
+        if self.tau_range[0] >= self.tau_range[1] and self.tau_range[0] < 8.0:
             self.tau_range[1] = round(self.tau_range[0] + 0.1, 1)
             self.maxTau_label.setText(f"max Tau [{self.tau_range[1]}]")
             self.maxTau_sl.setValue(int(self.tau_range[1]*10))
@@ -423,10 +423,11 @@ class Adaptive_GUI(QWidget):
 
             for n in range(self.video_range[0], self.video_range[1], image_per_calculation):
                 stack_gpu = cuda.to_device(self.stack_cpu[n:n+image_per_calculation], stream=stream)
-                dilation_cuda_3D[self.block, self.threads](diluted_image_gpu, stack_gpu, self.kernel, 0)
+                dilation_cuda_3D[self.block, self.threads](diluted_image_gpu, stack_gpu, self.kernel, self.threshold)
                 flim_fit_2D[self.block, self.threads](tau_gpu, diluted_image_gpu, pos_taus_gpu, self.x_data_gpu)
                 mean_cuda_3D[self.block, self.threads](res_image_gpu, stack_gpu)
-                flim_to_rgb[self.block, self.threads](rbg_gpu, tau_gpu, res_image_gpu, self.tau_range[0], self.tau_range[1], self.threshold)
+                res_image_gpu.copy_to_host(self.viewer.layers["Intensity"].data[image_idx], stream=stream)
+                flim_to_rgb[self.block, self.threads](rbg_gpu, tau_gpu, res_image_gpu, self.tau_range[0], self.tau_range[1], self.viewer.layers["Intensity"].data[image_idx].max())
 
                 res_image_gpu.copy_to_host(self.viewer.layers["Intensity"].data[image_idx], stream=stream)
                 if show_TimeStack:

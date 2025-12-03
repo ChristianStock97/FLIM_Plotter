@@ -17,6 +17,12 @@ from pathlib import Path
 class ParametersDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        self.config_path = "config.ini"
+        self.config = configparser.ConfigParser()
+
+        self.config.read(self.config_path)
+
         self.setWindowTitle("Acquisition Parameters")
 
         layout = QFormLayout(self)
@@ -26,13 +32,14 @@ class ParametersDialog(QDialog):
         for val in (4, 8, 16):
             self.interleaving_combo.addItem(str(val), val)
         layout.addRow("Interleaving:", self.interleaving_combo)
-
+        self.interleaving_combo.setCurrentText(self.config['Reconstruction'].get('Interleaving', '0'))
         # num_frames (>= 1)
         self.num_frames_spin = QSpinBox(self)
         self.num_frames_spin.setMinimum(1)
         self.num_frames_spin.setMaximum(1_000_000)
         self.num_frames_spin.setValue(1)
         layout.addRow("Number of frames:", self.num_frames_spin)
+        self.num_frames_spin.setValue(int(self.config['Reconstruction'].get('N-Images', '1')))
 
         # sample_offset (>= 0)
         self.sample_offset_spin = QSpinBox(self)
@@ -40,6 +47,7 @@ class ParametersDialog(QDialog):
         self.sample_offset_spin.setMaximum(1_000_000)
         self.sample_offset_spin.setValue(0)
         layout.addRow("Sample offset:", self.sample_offset_spin)
+        self.sample_offset_spin.setValue(int(self.config['Reconstruction'].get('Offset', '0')))
 
         # OK / Cancel
         self.button_box = QDialogButtonBox(
@@ -52,12 +60,19 @@ class ParametersDialog(QDialog):
 
     def get_values(self):
         """Return values as a dict."""
+        self.save_confog_values()
         return {
             "Interleaving": self.interleaving_combo.currentData(),
             "num_frames": self.num_frames_spin.value(),
             "sample_offset": self.sample_offset_spin.value(),
         }
 
+    def save_confog_values(self):
+        self.config['Reconstruction']['Interleaving'] = str(self.interleaving_combo.currentData())
+        self.config['Reconstruction']['N-Images'] = str(self.num_frames_spin.value())
+        self.config['Reconstruction']['Offset'] = str(self.sample_offset_spin.value())
+        with open(self.config_path, 'w') as f:
+            self.config.write(f)
 
 def ask_parameters(parent=None):
     dlg = ParametersDialog(parent)

@@ -70,33 +70,39 @@ def convert_to_image_cuda(path, Interleaving,num_frames=1, sample_offset=0, peak
     but executes the core filling loop on the GPU.
     """
     SamplePerPixel = 4 * Interleaving
-    length = num_frames * SamplePerPixel * 512 * 512
-    data = load_data(path, length, sample_offset)
-    num_frames = int(len(data) / (4 * Interleaving * 512 * 512))
+    SamplePerImage =  SamplePerPixel * 512 * 512
+    #data = load_data(path, length, sample_offset)
+    #num_frames = int(len(data) / (4 * Interleaving * 512 * 512))
     
     hight=512 
     width=511
     threads_per_block=512
     # Allocate output on host
-    time_stack_host = np.zeros((num_frames, SamplePerPixel-peak_offset, hight, width),
-                               dtype=np.uint8)
+    time_stack_host = np.zeros((num_frames, SamplePerPixel-peak_offset, hight, width), dtype=np.uint8)
 
     # Move data to GPU
-    data_dev = cuda.to_device(data.astype(np.uint8, copy=False))
-    time_stack_dev = cuda.to_device(time_stack_host)
+    data_dev = cuda.to_device(np.zeros(SamplePerImage, dtype=np.uint8))
+    time_stack_dev = cuda.to_device(np.zeros((SamplePerPixel-peak_offset, hight, width), dtype=np.uint8))
 
     # Launch kernel
     total_pixels = hight * width
     blocks_per_grid = (total_pixels + threads_per_block - 1) // threads_per_block
-    Sample_Per_Image = SamplePerPixel * 512 * hight
-    for k in range(num_frames):
-        _convert_to_image_kernel[blocks_per_grid, threads_per_block](
-            data_dev[Sample_Per_Image*k:Sample_Per_Image*(k+1)], time_stack_dev[k],
-            Interleaving, width, hight, SamplePerPixel, peak_offset
-        )
 
-    # Copy result back
-    time_stack_dev.copy_to_host(time_stack_host)
+    with open(path, 'rb') as file: 
+        file.seek(sample_offset+3070)
+        for k in range(num_frames):
+            data = file.read(SamplePerImage)
+            ret_data = np.frombuffer(data, dtype=np.uint8)
+            if (ret_data.size == SamplePerImage):
+                cuda.to_device(ret_data, to=data_dev)
+                _convert_to_image_kernel[blocks_per_grid, threads_per_block](
+                    data_dev, time_stack_dev,
+                    Interleaving, width, hight, SamplePerPixel, peak_offset
+                )
+                # Copy result back
+                time_stack_dev.copy_to_host(time_stack_host[k])
+                
+    
     return time_stack_host
 
 def load_data(file_path, length, offset):

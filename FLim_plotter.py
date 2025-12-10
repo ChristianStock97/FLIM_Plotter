@@ -388,7 +388,9 @@ class Adaptive_GUI(QWidget):
                     params = ask_parameters(self)
                     if params:
                         print(params)
-                    tmp: np.array = convert_to_image_cuda(waveform_name, params["Interleaving"], params["num_frames"], params["sample_offset"], 0)
+                    #tmp: np.array 
+                    self.stack_cpu = convert_to_image_cuda(waveform_name, params["Interleaving"], params["num_frames"], params["sample_offset"], self.start_sample)
+                    #self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
                 except Exception as e:
                     tb = traceback.format_exc()
                     QMessageBox.critical(self, "File Read Error", f"Unable to read TIFF file:\n{e}\n\nSee console for details.")
@@ -399,7 +401,7 @@ class Adaptive_GUI(QWidget):
                 print("Unknown file type")
                 return
             
-            if len(tmp.shape) == 3:
+            if len(self.stack_cpu.shape) == 3:
                 try:
                     t = time()
                     tmp = tmp[self.start_sample:,:,:]
@@ -413,17 +415,18 @@ class Adaptive_GUI(QWidget):
                     self.stop_pos__sl.setValue(self.stack_cpu.shape[0])
                     self.start_pos__sl.setRange(0,self.stack_cpu.shape[0]-1)
                     self.start_pos__sl.setValue(0)
+                    self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
                 except Exception as e:
                     QMessageBox.critical(self, "Data Error", f"Failed to prepare 3D stack:\n{e}")
                     logging.exception("Failed to prepare 3D stack")
                     self.stack_cpu = None
                     return
 
-            elif len(tmp.shape) == 4:
+            elif len(self.stack_cpu.shape) == 4:
                 try:
                     t = time()
                     # assume (Frames, Samples, H, W)
-                    self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
+                    #self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
                     dt = time()
                     print(f"Neede {dt-t} Seconds for Data read")
                     self.stop_pos__sl.setRange(1,self.stack_cpu.shape[0])
@@ -508,7 +511,7 @@ class Adaptive_GUI(QWidget):
             stream = cuda.stream()
             t = time()  
             image_idx = 0
-
+            
             for n in range(self.video_range[0], self.video_range[1], image_per_calculation):
                 stack_gpu = cuda.to_device(self.stack_cpu[n:n+image_per_calculation], stream=stream)
                 dilation_cuda_3D[self.block, self.threads](diluted_image_gpu, stack_gpu, self.kernel, self.threshold)
@@ -524,6 +527,7 @@ class Adaptive_GUI(QWidget):
                     tau_gpu.copy_to_host(self.viewer.layers["Tau"].data[image_idx], stream=stream)
                 rbg_gpu.copy_to_host(self.viewer.layers["RGB"].data[image_idx], stream=stream)
                 image_idx += 1
+
             self.viewer.layers["Intensity"].refresh()
             if show_TimeStack:
                 self.viewer.layers["Dilated"].refresh()
@@ -570,3 +574,5 @@ def test_gui():
 
 if __name__ == "__main__":
     test_gui()
+    
+    

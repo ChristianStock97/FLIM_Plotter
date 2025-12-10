@@ -27,8 +27,8 @@ def flim_fit_2D(output, image, pos_taus, x_data):
         if sum_dif < min_dif:
             best_tau = tau
             min_dif = sum_dif
-    #if best_tau in [pos_taus[0], pos_taus[-1]]:
-    #    best_tau = 0
+    if best_tau in [pos_taus[0], pos_taus[-1]]:
+        best_tau = 0
     output[y, x] = best_tau
     
 @cuda.jit

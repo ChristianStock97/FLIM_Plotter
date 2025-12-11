@@ -64,13 +64,14 @@ def _convert_to_image_kernel(data, time_stack, Interleaving,
         time_stack[p, n, m] = data[pos_pixel + s]
         p += 1
 
-def convert_to_image_cuda(path, Interleaving,num_frames=1, sample_offset=0, peak_offset=0):
+def convert_to_image_cuda(path, Interleaving,num_frames=1, sample_offset=0, image_offset=0, peak_offset=0):
     """
     Host-side wrapper that behaves like your original convert_to_image,
     but executes the core filling loop on the GPU.
     """
     SamplePerPixel = 4 * Interleaving
     SamplePerImage =  SamplePerPixel * 512 * 512
+    sample_offset += image_offset * SamplePerImage
     #data = load_data(path, length, sample_offset)
     #num_frames = int(len(data) / (4 * Interleaving * 512 * 512))
     

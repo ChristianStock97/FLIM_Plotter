@@ -39,7 +39,7 @@ class ParametersDialog(QDialog):
         self.num_frames_spin.setMaximum(1_000_000)
         self.num_frames_spin.setValue(1)
         layout.addRow("Number of frames:", self.num_frames_spin)
-        self.num_frames_spin.setValue(int(self.config['Reconstruction'].get('N-Images', '1')))
+        self.num_frames_spin.setValue(int(self.config['Reconstruction'].get('n-images', '1')))
 
         # sample_offset (>= 0)
         self.sample_offset_spin = QSpinBox(self)
@@ -48,6 +48,14 @@ class ParametersDialog(QDialog):
         self.sample_offset_spin.setValue(0)
         layout.addRow("Sample offset:", self.sample_offset_spin)
         self.sample_offset_spin.setValue(int(self.config['Reconstruction'].get('Offset', '0')))
+
+        # sample_offset (>= 0)
+        self.image_offset_spin = QSpinBox(self)
+        self.image_offset_spin.setMinimum(0)
+        self.image_offset_spin.setMaximum(1_000_000)
+        self.image_offset_spin.setValue(0)
+        layout.addRow("Image offset:", self.image_offset_spin)
+        self.image_offset_spin.setValue(int(self.config['Reconstruction'].get('ImageOffset', '0')))
 
         # OK / Cancel
         self.button_box = QDialogButtonBox(
@@ -65,12 +73,14 @@ class ParametersDialog(QDialog):
             "Interleaving": self.interleaving_combo.currentData(),
             "num_frames": self.num_frames_spin.value(),
             "sample_offset": self.sample_offset_spin.value(),
+            "image_offset": self.image_offset_spin.value(),
         }
 
     def save_confog_values(self):
         self.config['Reconstruction']['Interleaving'] = str(self.interleaving_combo.currentData())
-        self.config['Reconstruction']['N-Images'] = str(self.num_frames_spin.value())
+        self.config['Reconstruction']['n-images'] = str(self.num_frames_spin.value())
         self.config['Reconstruction']['Offset'] = str(self.sample_offset_spin.value())
+        self.config['Reconstruction']['ImageOffset'] = str(self.image_offset_spin.value())
         with open(self.config_path, 'w') as f:
             self.config.write(f)
 
@@ -389,7 +399,7 @@ class Adaptive_GUI(QWidget):
                     if params:
                         print(params)
                     #tmp: np.array 
-                    self.stack_cpu = convert_to_image_cuda(waveform_name, params["Interleaving"], params["num_frames"], params["sample_offset"], self.start_sample)
+                    self.stack_cpu = convert_to_image_cuda(waveform_name, params["Interleaving"], params["num_frames"], params["sample_offset"], params["image_offset"], self.start_sample)
                     #self.stack_cpu = tmp[:,self.start_sample:,:,:].astype(np.uint8)
                 except Exception as e:
                     tb = traceback.format_exc()
